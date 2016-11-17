@@ -1,0 +1,19 @@
+{
+  "name": "multi_pong_server",
+  "version": "1.0.0",
+  "description": "Multiplayer Pong server",
+  "main": "app.js",
+  "keywords": [
+    "phaser",
+    "nodejs",
+    "multiplayer",
+    "pong"
+  ],
+  "author": "Alan Kydd",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.13.3",
+    "socket.io": "^1.3.7",
+    "underscore": "^1.8.3"
+  }
+}
