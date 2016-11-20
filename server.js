@@ -24,9 +24,8 @@ io.on('connection', function(client) {
 
     client.on('playerReady', function() {
         playersState[client.id].state = 'ready'
-        console.log(JSON.stringify(playersState))
 
-        if (allPlayersHaveState('ready')) {
+        if (allPlayersAreReady()) {
             io.emit('startgame');
         }
     });
@@ -35,7 +34,7 @@ io.on('connection', function(client) {
         playersState[client.id].state = 'levelLoaded'
         client.emit('setId', {id: client.id});
 
-        if (allPlayersHaveState('levelLoaded')) {
+        if (allPlayersLevelLoaded()) {
             io.emit('spawnPlayers', [
                 {
                     id: _.keys(playersState)[0],
@@ -77,6 +76,14 @@ function allPlayersHaveState(state) {
     return _.reduce(playersState, function(memo, playerState) {
         return memo && playerState.state === state
     }, true)
+}
+
+function allPlayersAreReady() {
+    return allPlayersHaveState('ready') && _.size(playersState) === 2
+}
+
+function allPlayersLevelLoaded() {
+    return allPlayersHaveState('levelLoaded') && _.size(playersState) === 2
 }
 
 function resetBall() {
