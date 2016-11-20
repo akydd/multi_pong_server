@@ -69,6 +69,7 @@ io.on('connection', function(client) {
         });
     });
 
+    // TODO: set the client to waiting state if connected clients > 2
     client.on('disconnect', function() {
         delete playersState[client.id]
         console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
@@ -144,7 +145,6 @@ function processMoves() {
                 ts: Date.now(),
                 posx: playerState.posx
             });
-            // console.log(playerState.posx);
         }
     });
 
@@ -194,16 +194,18 @@ function processMoves() {
             ballState.xdir = ballState.xdir * -1;
         }
 
-
-
         // Handle ball & paddle collisions.
         // The ball is a 20x20 square, so it will collide with:
         // - player1 when its y coordinate is <= 50
         // - player2 when its y coordinate is >= 910
-        // In either case we do a simple
+        // In either case we simple reverse the y-direction of the ball.
+        var player1 = playersState[_.keys(playersState)[0]]
+        var player2 = playersState[_.keys(playersState)[1]]
+        if ((ballState.posy <= 50 && ballState.posx >= player1.posx - 50 && ballState.posx <= player1.posx + 50) ||
+            (ballState.posy >= 910 && ballState.posx >= player2.posx - 50 && ballState.posx <= player2.posx + 50)) {
+            ballState.ydir = ballState.ydir * -1
+        }
 
-
-        console.log('ballpos - x: ' + ballState.posx + ', y: ' + ballState.posy);
         io.emit('updateBallState', {
             posx: ballState.posx,
             posy: ballState.posy
