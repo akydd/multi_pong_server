@@ -7,9 +7,13 @@ var app = require('express')()
 server.listen(8000);
 
 var playersState = {};
+
 var ballState = {
     active: false
 };
+
+var player1Score = 0;
+var player2Score = 0;
 
 // Handle socket connection
 io.on('connection', function(client) {
@@ -150,9 +154,31 @@ function processMoves() {
         ballState.posx = ballState.posx + ballState.xdir * 0.4 * delta;
         ballState.posy = ballState.posy + ballState.ydir * 0.4 * delta;
 
-        // Handle ball out of bounds in y direction
+        // Handle ball out of bounds in y direction.
+        // Someone scored a point!  Register and reset ball.
         if (ballState.posy <= 0 || ballState.posy >= 960) {
             ballState.active = false;
+
+            if (ballState.posy <= 0) {
+                player2Score += 1
+                io.emit('updateScore', {
+                    player: 'player2',
+                    score: player2Score
+                })
+            }
+
+            if (ballState.posy >= 960) {
+                player1Score += 1
+                io.emit('updateScore', {
+                    player: 'player1',
+                    score: player1Score
+                })
+            }
+
+            // reset ball
+            setTimeout(function() {
+                resetBall();
+            }, 3000);
         }
 
         // Handle left/right wall collisions.
