@@ -6,14 +6,14 @@ var app = require('express')()
 
 server.listen(8000);
 
-var playersState = {};
-
-var ballState = {
-    active: false
-};
-
-var player1Score = 0;
-var player2Score = 0;
+var worldState = {
+    playersState: {},
+    ballState: {
+        active: false
+    },
+    player1Score: 0,
+    player2Score: 0
+}
 
 // Handle socket connection
 io.on('connection', function(client) {
@@ -21,14 +21,14 @@ io.on('connection', function(client) {
     console.log("Connected client " + client.id)
     console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
 
-    playersState[client.id] = {
+    worldState.playersState[client.id] = {
         state: 'connected',
         posx: 320,
         moves: []
     }
 
     client.on('playerReady', function() {
-        playersState[client.id].state = 'ready'
+        worldState.playersState[client.id].state = 'ready'
 
         if (allPlayersAreReady()) {
             io.emit('startgame');
@@ -36,19 +36,19 @@ io.on('connection', function(client) {
     });
 
     client.on('levelLoaded', function() {
-        playersState[client.id].state = 'levelLoaded'
+        worldState.playersState[client.id].state = 'levelLoaded'
 
         if (allPlayersLevelLoaded()) {
             io.emit('spawnPlayers', [
                 {
-                    id: _.keys(playersState)[0],
+                    id: _.keys(worldState.playersState)[0],
                     pos: {
                         x: 320,
                         y: 40
                     }
                 },
                 {
-                    id: _.keys(playersState)[1],
+                    id: _.keys(worldState.playersState)[1],
                     pos: {
                         x: 320,
                         y: 920
@@ -63,7 +63,7 @@ io.on('connection', function(client) {
     });
 
     client.on('clientMove', function(data) {
-        playersState[client.id].moves.push({
+        worldState.playersState[client.id].moves.push({
             dir: data.dir,
             ts: data.ts
         });
@@ -71,41 +71,41 @@ io.on('connection', function(client) {
 
     // TODO: set the client to waiting state if connected clients > 2
     client.on('disconnect', function() {
-        delete playersState[client.id]
+        delete worldState.playersState[client.id]
         console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
     });
 
 });
 
 function allPlayersHaveState(state) {
-    return _.reduce(playersState, function(memo, playerState) {
+    return _.reduce(worldState.playersState, function(memo, playerState) {
         return memo && playerState.state === state
     }, true)
 }
 
 function allPlayersAreReady() {
-    return allPlayersHaveState('ready') && _.size(playersState) === 2
+    return allPlayersHaveState('ready') && _.size(worldState.playersState) === 2
 }
 
 function allPlayersLevelLoaded() {
-    return allPlayersHaveState('levelLoaded') && _.size(playersState) === 2
+    return allPlayersHaveState('levelLoaded') && _.size(worldState.playersState) === 2
 }
 
 function resetBall() {
-    ballState.posx = _.random(11, 629);
-    ballState.posy = 480;
+    worldState.ballState.posx = _.random(11, 629);
+    worldState.ballState.posy = 480;
 
     var directions = [-1, 1];
 
     var xdirIndex = _.random(0, 1);
-    ballState.xdir = directions[xdirIndex];
+    worldState.ballState.xdir = directions[xdirIndex];
 
     var ydirIndex = _.random(0, 1);
-    ballState.ydir = directions[ydirIndex];
+    worldState.ballState.ydir = directions[ydirIndex];
 
-    ballState.active = true;
+    worldState.ballState.active = true;
 
-    io.emit('resetBall', ballState);
+    io.emit('resetBall', worldState.ballState);
 }
 
 setInterval(function() {
@@ -119,7 +119,7 @@ function processMoves() {
     prevTs = now;
 
     // paddle moves
-    _.each(playersState, function(playerState, clientId) {
+    _.each(worldState.playersState, function(playerState, clientId) {
         var oldposx = playerState.posx;
 
         while(playerState.moves.length > 0) {
@@ -149,29 +149,29 @@ function processMoves() {
     });
 
     // ball move
-    if (ballState.active === true) {
+    if (worldState.ballState.active === true) {
         // calculate new position of ball, given that x/y speeds are each 400px/s
-        ballState.posx = ballState.posx + ballState.xdir * 0.4 * delta;
-        ballState.posy = ballState.posy + ballState.ydir * 0.4 * delta;
+        worldState.ballState.posx = worldState.ballState.posx + worldState.ballState.xdir * 0.4 * delta;
+        worldState.ballState.posy = worldState.ballState.posy + worldState.ballState.ydir * 0.4 * delta;
 
         // Handle ball out of bounds in y direction.
         // Someone scored a point!  Register and reset ball.
-        if (ballState.posy <= 0 || ballState.posy >= 960) {
-            ballState.active = false;
+        if (worldState.ballState.posy <= 0 || worldState.ballState.posy >= 960) {
+            worldState.ballState.active = false;
 
-            if (ballState.posy <= 0) {
-                player2Score += 1
+            if (worldState.ballState.posy <= 0) {
+                worldState.player2Score += 1
                 io.emit('updateScore', {
                     player: 'player2',
-                    score: player2Score
+                    score: worldState.player2Score
                 })
             }
 
-            if (ballState.posy >= 960) {
-                player1Score += 1
+            if (worldState.ballState.posy >= 960) {
+                worldState.player1Score += 1
                 io.emit('updateScore', {
                     player: 'player1',
-                    score: player1Score
+                    score: worldState.player1Score
                 })
             }
 
@@ -184,14 +184,14 @@ function processMoves() {
         // Handle left/right wall collisions.
         // The ball is is a 20x20 square, so it will hit a wall when xpos = 10
         // or when xpos = 630.  In either case, switch x direction.
-        if (ballState.posx <= 10) {
-            ballState.posx = 10;
-            ballState.xdir = ballState.xdir * -1;
+        if (worldState.ballState.posx <= 10) {
+            worldState.ballState.posx = 10;
+            worldState.ballState.xdir = worldState.ballState.xdir * -1;
         }
 
-        if (ballState.posx >= 630) {
-            ballState.posx = 630;
-            ballState.xdir = ballState.xdir * -1;
+        if (worldState.ballState.posx >= 630) {
+            worldState.ballState.posx = 630;
+            worldState.ballState.xdir = worldState.ballState.xdir * -1;
         }
 
         // Handle ball & paddle collisions.
@@ -199,16 +199,16 @@ function processMoves() {
         // - player1 when its y coordinate is <= 50
         // - player2 when its y coordinate is >= 910
         // In either case we simple reverse the y-direction of the ball.
-        var player1 = playersState[_.keys(playersState)[0]]
-        var player2 = playersState[_.keys(playersState)[1]]
-        if ((ballState.posy <= 50 && ballState.posx >= player1.posx - 50 && ballState.posx <= player1.posx + 50) ||
-            (ballState.posy >= 910 && ballState.posx >= player2.posx - 50 && ballState.posx <= player2.posx + 50)) {
-            ballState.ydir = ballState.ydir * -1
+        var player1 = worldState.playersState[_.keys(worldState.playersState)[0]]
+        var player2 = worldState.playersState[_.keys(worldState.playersState)[1]]
+        if ((worldState.ballState.posy <= 50 && worldState.ballState.posx >= player1.posx - 50 && worldState.ballState.posx <= player1.posx + 50) ||
+            (worldState.ballState.posy >= 910 && worldState.ballState.posx >= player2.posx - 50 && worldState.ballState.posx <= player2.posx + 50)) {
+            worldState.ballState.ydir = worldState.ballState.ydir * -1
         }
 
         io.emit('updateBallState', {
-            posx: ballState.posx,
-            posy: ballState.posy
+            posx: worldState.ballState.posx,
+            posy: worldState.ballState.posy
         });
     }
 }
