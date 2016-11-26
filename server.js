@@ -18,6 +18,7 @@ var player2Score = 0;
 // Handle socket connection
 io.on('connection', function(client) {
     // TODO: limit to 2 concurrent connections
+    console.log("Connected client " + client.id)
     console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
 
     playersState[client.id] = {
@@ -36,7 +37,6 @@ io.on('connection', function(client) {
 
     client.on('levelLoaded', function() {
         playersState[client.id].state = 'levelLoaded'
-        client.emit('setId', {id: client.id});
 
         if (allPlayersLevelLoaded()) {
             io.emit('spawnPlayers', [
