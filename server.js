@@ -4,7 +4,9 @@ var app = require('express')()
   , _ = require('underscore')
   , prevTs = 0;
 
-server.listen(8000);
+var port = process.env.PORT || 8000
+server.listen(port);
+console.log("Listening on port " + port)
 
 var worldState = {
     playersState: {},
@@ -23,6 +25,7 @@ io.on('connection', function(client) {
         io.to(client.id).emit('disconnect', {message: 'Too many users!'})
     }
 
+    // TODO: handle case if one player leaves mid game.
     client.on('disconnect', function() {
         console.log("Disconnected client: " + client.id)
     })
