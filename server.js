@@ -17,9 +17,18 @@ var worldState = {
 
 // Handle socket connection
 io.on('connection', function(client) {
-    // TODO: limit to 2 concurrent connections
+    // limit to 2 concurrent connections
+    var numberOfClients = Object.keys(io.sockets.connected).length
+    if (numberOfClients > 2) {
+        io.to(client.id).emit('disconnect', {message: 'Too many users!'})
+    }
+
+    client.on('disconnect', function() {
+        console.log("Disconnected client: " + client.id)
+    })
+
     console.log("Connected client " + client.id)
-    console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
+    console.log((numberOfClients || "no") + " connections");
 
     worldState.playersState[client.id] = {
         state: 'connected',
