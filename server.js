@@ -9,6 +9,7 @@ server.listen(port);
 console.log("Listening on port " + port)
 
 var worldState = {
+    status: 'waiting',
     playersState: {},
     ballState: {
         active: false
@@ -43,6 +44,7 @@ io.on('connection', function(client) {
         worldState.playersState[client.id].state = 'ready'
 
         if (allPlayersAreReady()) {
+            worldState.status = 'startgame'
             io.emit('startgame');
         }
     });
@@ -81,9 +83,10 @@ io.on('connection', function(client) {
         });
     });
 
-    // TODO: set the client to waiting state if connected clients > 2
+    // TODO: set the client to waiting state if connected clients < 2
     client.on('disconnect', function() {
         delete worldState.playersState[client.id]
+        worldState.status = 'waiting'
         console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
     });
 
@@ -130,7 +133,7 @@ function processMoves() {
     var delta = now - prevTs;
     prevTs = now;
 
-    // var message = {}
+    var message = {}
 
     // paddle moves
     _.each(worldState.playersState, function(playerState, clientId) {
@@ -152,14 +155,14 @@ function processMoves() {
             }
         }
 
-        // TODO: optimize so that clientadjust messages are only sent when necessary
+        //  Only send an adjustment if the posx has changed
         if (oldposx !== playerState.posx) {
-            var clientadjust = {
+            message.clientAdjust = message.clientAdjust || []
+            message.clientAdjust.push({
                 id: clientId,
                 ts: Date.now(),
                 posx: playerState.posx
-            }
-            io.emit('clientadjust', clientadjust);
+            })
         }
     });
 
@@ -191,7 +194,7 @@ function processMoves() {
                     score: worldState.player1Score
                 }
             }
-            io.emit('updateScore', updateScore)
+            message.updateScore = updateScore
 
             // reset ball
             setTimeout(function() {
@@ -224,11 +227,15 @@ function processMoves() {
             worldState.ballState.ydir = worldState.ballState.ydir * -1
         }
 
-        var updateBallState = {
+        // TODO: if no position change, don't send data in message
+        var ballState = {
             posx: worldState.ballState.posx,
             posy: worldState.ballState.posy
         }
 
-        io.emit('updateBallState', updateBallState);
+        message.ballState = ballState
+
+        io.emit('gameState', message)
+        console.log(JSON.stringify(message))
     }
 }
