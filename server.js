@@ -130,6 +130,8 @@ function processMoves() {
     var delta = now - prevTs;
     prevTs = now;
 
+    // var message = {}
+
     // paddle moves
     _.each(worldState.playersState, function(playerState, clientId) {
         var oldposx = playerState.posx;
@@ -152,11 +154,12 @@ function processMoves() {
 
         // TODO: optimize so that clientadjust messages are only sent when necessary
         if (oldposx !== playerState.posx) {
-            io.emit('clientadjust', {
+            var clientadjust = {
                 id: clientId,
                 ts: Date.now(),
                 posx: playerState.posx
-            });
+            }
+            io.emit('clientadjust', clientadjust);
         }
     });
 
@@ -171,21 +174,24 @@ function processMoves() {
         if (worldState.ballState.posy <= 0 || worldState.ballState.posy >= 640) {
             worldState.ballState.active = false;
 
+            var updateScore 
+
             if (worldState.ballState.posy <= 0) {
                 worldState.player2Score += 1
-                io.emit('updateScore', {
+                updateScore = {
                     player: 'player2',
                     score: worldState.player2Score
-                })
+                }
             }
 
             if (worldState.ballState.posy >= 640) {
                 worldState.player1Score += 1
-                io.emit('updateScore', {
+                updateScore = {
                     player: 'player1',
                     score: worldState.player1Score
-                })
+                }
             }
+            io.emit('updateScore', updateScore)
 
             // reset ball
             setTimeout(function() {
@@ -218,9 +224,11 @@ function processMoves() {
             worldState.ballState.ydir = worldState.ballState.ydir * -1
         }
 
-        io.emit('updateBallState', {
+        var updateBallState = {
             posx: worldState.ballState.posx,
             posy: worldState.ballState.posy
-        });
+        }
+
+        io.emit('updateBallState', updateBallState);
     }
 }
