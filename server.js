@@ -63,7 +63,7 @@ io.on('connection', function(client) {
                     id: _.keys(worldState.playersState)[1],
                     pos: {
                         x: 320,
-                        y: 920
+                        y: 600
                     }
                 }
             ]);
@@ -105,7 +105,7 @@ function allPlayersLevelLoaded() {
 
 function resetBall() {
     worldState.ballState.posx = _.random(11, 629);
-    worldState.ballState.posy = 480;
+    worldState.ballState.posy = 320;
 
     var directions = [-1, 1];
 
@@ -168,7 +168,7 @@ function processMoves() {
 
         // Handle ball out of bounds in y direction.
         // Someone scored a point!  Register and reset ball.
-        if (worldState.ballState.posy <= 0 || worldState.ballState.posy >= 960) {
+        if (worldState.ballState.posy <= 0 || worldState.ballState.posy >= 640) {
             worldState.ballState.active = false;
 
             if (worldState.ballState.posy <= 0) {
@@ -179,7 +179,7 @@ function processMoves() {
                 })
             }
 
-            if (worldState.ballState.posy >= 960) {
+            if (worldState.ballState.posy >= 640) {
                 worldState.player1Score += 1
                 io.emit('updateScore', {
                     player: 'player1',
@@ -209,12 +209,12 @@ function processMoves() {
         // Handle ball & paddle collisions.
         // The ball is a 20x20 square, so it will collide with:
         // - player1 when its y coordinate is <= 50
-        // - player2 when its y coordinate is >= 910
+        // - player2 when its y coordinate is >= 590
         // In either case we simple reverse the y-direction of the ball.
         var player1 = worldState.playersState[_.keys(worldState.playersState)[0]]
         var player2 = worldState.playersState[_.keys(worldState.playersState)[1]]
         if ((worldState.ballState.posy <= 50 && worldState.ballState.posx >= player1.posx - 50 && worldState.ballState.posx <= player1.posx + 50) ||
-            (worldState.ballState.posy >= 910 && worldState.ballState.posx >= player2.posx - 50 && worldState.ballState.posx <= player2.posx + 50)) {
+            (worldState.ballState.posy >= 590 && worldState.ballState.posx >= player2.posx - 50 && worldState.ballState.posx <= player2.posx + 50)) {
             worldState.ballState.ydir = worldState.ballState.ydir * -1
         }
 
