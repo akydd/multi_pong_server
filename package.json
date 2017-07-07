@@ -9,11 +9,11 @@
     "multiplayer",
     "pong"
   ],
-  "author": "Alan Kydd",
+  "author": "Alan Kydd <akydd@ualberta.net>",
   "license": "ISC",
   "dependencies": {
     "express": "4.14.0",
     "socket.io": "1.5.1",
-    "underscore": "^1.8.3"
+    "underscore": "1.8.3"
   }
 }
