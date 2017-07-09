@@ -18,6 +18,7 @@ var worldState = {
     player2Score: 0
 }
 
+
 // Handle socket connection
 io.on('connection', function(client) {
     // limit to 2 concurrent connections
@@ -119,8 +120,6 @@ function resetBall() {
     worldState.ballState.ydir = directions[ydirIndex];
 
     worldState.ballState.active = true;
-
-    io.emit('resetBall', worldState.ballState);
 }
 
 setInterval(function() {
@@ -167,6 +166,7 @@ function processMoves() {
     });
 
     // ball move
+    var ballState = {}
     if (worldState.ballState.active === true) {
         // calculate new position of ball, given that x/y speeds are each 400px/s
         worldState.ballState.posx = worldState.ballState.posx + worldState.ballState.xdir * 0.4 * delta;
@@ -174,8 +174,9 @@ function processMoves() {
 
         // Handle ball out of bounds in y direction.
         // Someone scored a point!  Register and reset ball.
-        if (worldState.ballState.posy <= 0 || worldState.ballState.posy >= 640) {
-            worldState.ballState.active = false;
+        if (worldState.ballState.posy < -10 || worldState.ballState.posy > 650) {
+            // the Phaser clients should handle killing the ball once it's out of bounds.
+            worldState.ballState.active = false
 
             var updateScore 
 
@@ -220,6 +221,7 @@ function processMoves() {
         // - player1 when its y coordinate is <= 50
         // - player2 when its y coordinate is >= 590
         // In either case we simple reverse the y-direction of the ball.
+        // TODO: fix weird cases where ball slips under the paddle from the side
         var player1 = worldState.playersState[_.keys(worldState.playersState)[0]]
         var player2 = worldState.playersState[_.keys(worldState.playersState)[1]]
         if ((worldState.ballState.posy <= 50 && worldState.ballState.posx >= player1.posx - 50 && worldState.ballState.posx <= player1.posx + 50) ||
@@ -228,13 +230,14 @@ function processMoves() {
         }
 
         // TODO: if no position change, don't send data in message
-        var ballState = {
-            posx: worldState.ballState.posx,
-            posy: worldState.ballState.posy
-        }
+        ballState.posx = worldState.ballState.posx,
+        ballState.posy = worldState.ballState.posy
+    }
 
-        message.ballState = ballState
+    ballState.active = worldState.ballState.active
+    message.ballState = ballState
 
+    if (!_.isEmpty(message)) {
         io.emit('gameState', message)
         console.log(JSON.stringify(message))
     }
