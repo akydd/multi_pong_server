@@ -9,6 +9,7 @@ server.listen(port);
 console.log("Listening on port " + port)
 
 var worldState = {
+    status: 'waiting',
     playersState: {},
     ballState: {
         active: false
@@ -16,6 +17,7 @@ var worldState = {
     player1Score: 0,
     player2Score: 0
 }
+
 
 // Handle socket connection
 io.on('connection', function(client) {
@@ -43,6 +45,7 @@ io.on('connection', function(client) {
         worldState.playersState[client.id].state = 'ready'
 
         if (allPlayersAreReady()) {
+            worldState.status = 'startgame'
             io.emit('startgame');
         }
     });
@@ -81,9 +84,10 @@ io.on('connection', function(client) {
         });
     });
 
-    // TODO: set the client to waiting state if connected clients > 2
+    // TODO: set the client to waiting state if connected clients < 2
     client.on('disconnect', function() {
         delete worldState.playersState[client.id]
+        worldState.status = 'waiting'
         console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
     });
 
@@ -116,8 +120,6 @@ function resetBall() {
     worldState.ballState.ydir = directions[ydirIndex];
 
     worldState.ballState.active = true;
-
-    io.emit('resetBall', worldState.ballState);
 }
 
 setInterval(function() {
@@ -130,7 +132,7 @@ function processMoves() {
     var delta = now - prevTs;
     prevTs = now;
 
-    // var message = {}
+    var message = {}
 
     // paddle moves
     _.each(worldState.playersState, function(playerState, clientId) {
@@ -152,18 +154,19 @@ function processMoves() {
             }
         }
 
-        // TODO: optimize so that clientadjust messages are only sent when necessary
+        //  Only send an adjustment if the posx has changed
         if (oldposx !== playerState.posx) {
-            var clientadjust = {
+            message.clientAdjust = message.clientAdjust || []
+            message.clientAdjust.push({
                 id: clientId,
                 ts: Date.now(),
                 posx: playerState.posx
-            }
-            io.emit('clientadjust', clientadjust);
+            })
         }
     });
 
     // ball move
+    var ballState = {}
     if (worldState.ballState.active === true) {
         // calculate new position of ball, given that x/y speeds are each 400px/s
         worldState.ballState.posx = worldState.ballState.posx + worldState.ballState.xdir * 0.4 * delta;
@@ -171,8 +174,9 @@ function processMoves() {
 
         // Handle ball out of bounds in y direction.
         // Someone scored a point!  Register and reset ball.
-        if (worldState.ballState.posy <= 0 || worldState.ballState.posy >= 640) {
-            worldState.ballState.active = false;
+        if (worldState.ballState.posy < -10 || worldState.ballState.posy > 650) {
+            // the Phaser clients should handle killing the ball once it's out of bounds.
+            worldState.ballState.active = false
 
             var updateScore 
 
@@ -191,7 +195,7 @@ function processMoves() {
                     score: worldState.player1Score
                 }
             }
-            io.emit('updateScore', updateScore)
+            message.updateScore = updateScore
 
             // reset ball
             setTimeout(function() {
@@ -204,31 +208,72 @@ function processMoves() {
         // or when xpos = 630.  In either case, switch x direction.
         if (worldState.ballState.posx <= 10) {
             worldState.ballState.posx = 10;
-            worldState.ballState.xdir = worldState.ballState.xdir * -1;
+            worldState.ballState.xdir = 1
         }
 
         if (worldState.ballState.posx >= 630) {
             worldState.ballState.posx = 630;
-            worldState.ballState.xdir = worldState.ballState.xdir * -1;
+            worldState.ballState.xdir = -1
         }
 
         // Handle ball & paddle collisions.
-        // The ball is a 20x20 square, so it will collide with:
-        // - player1 when its y coordinate is <= 50
-        // - player2 when its y coordinate is >= 590
-        // In either case we simple reverse the y-direction of the ball.
+        // Note that the max x overlap that can occur is exactly delta, since the paddle moves at 0.6x/delta and the ball moves at 0.4x/delta and 0.4y/delta.
+        // The max y overlap that can occur is 0.4 * delta.
+
         var player1 = worldState.playersState[_.keys(worldState.playersState)[0]]
         var player2 = worldState.playersState[_.keys(worldState.playersState)[1]]
-        if ((worldState.ballState.posy <= 50 && worldState.ballState.posx >= player1.posx - 50 && worldState.ballState.posx <= player1.posx + 50) ||
-            (worldState.ballState.posy >= 590 && worldState.ballState.posx >= player2.posx - 50 && worldState.ballState.posx <= player2.posx + 50)) {
-            worldState.ballState.ydir = worldState.ballState.ydir * -1
+
+        // Collision of ball to front of top paddle
+        if (worldState.ballState.posy <= 50  && worldState.ballState.posy >= 50 - 0.4 * delta && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx + 50 + 10) {
+            // push the ball up to the surface of the paddle
+            worldState.ballState.posy = 50
+            worldState.ballState.ydir = 1
         }
 
-        var updateBallState = {
-            posx: worldState.ballState.posx,
-            posy: worldState.ballState.posy
+        // Collision of ball to left side of top paddle
+        if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx - 50 - 10 + delta) {
+            // push the ball to the left surface of the paddle
+            worldState.ballState.posx = player1.posx - 50 - 10
+            worldState.ballState.xdir = -1
         }
 
-        io.emit('updateBallState', updateBallState);
+        // Collision of ball to right side of top paddle
+        if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx <= player1.posx + 50 + 10 && worldState.ballState.posx >= player1.posx + 50 + 10 - delta) {
+            // push the ball to the left surface of the paddle
+            worldState.ballState.posx = player1.posx + 50 + 10
+            worldState.ballState.xdir = 1
+        }
+
+        // Collision of ball to front of bottom paddle
+        if (worldState.ballState.posy >= 590  && worldState.ballState.posy <= 590 + 0.4 * delta && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx + 50 + 10) {
+            // push the ball up to the surface of the paddle
+            worldState.ballState.posy = 590
+            worldState.ballState.ydir = -1
+        }
+
+        // Collision of ball to left side of bottom paddle
+        if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx - 50 - 10 + delta) {
+            // push the ball to the left surface of the paddle
+            worldState.ballState.posx = player2.posx - 50 - 10
+            worldState.ballState.xdir = -1
+        }
+
+        // Collision of ball to right side of bottom paddle
+        if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx <= player2.posx + 50 + 10 && worldState.ballState.posx >= player2.posx + 50 + 10 - delta) {
+            // push the ball to the left surface of the paddle
+            worldState.ballState.posx = player2.posx + 50 + 10
+            worldState.ballState.xdir = 1
+        }
+
+        ballState.posx = worldState.ballState.posx
+        ballState.posy = worldState.ballState.posy
+    }
+
+    ballState.active = worldState.ballState.active
+    message.ballState = ballState
+
+    if (!_.isEmpty(message)) {
+        io.emit('gameState', message)
+        console.log(JSON.stringify(message))
     }
 }
