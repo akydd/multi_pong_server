@@ -46,7 +46,6 @@ io.on('connection', function(client) {
 
         if (allPlayersAreReady()) {
             worldState.status = 'startgame'
-            io.emit('startgame');
         }
     });
 
@@ -154,7 +153,7 @@ function processMoves() {
             }
         }
 
-        //  Only send an adjustment if the posx has changed
+        // Only send an adjustment if the posx has changed
         if (oldposx !== playerState.posx) {
             message.clientAdjust = message.clientAdjust || []
             message.clientAdjust.push({
@@ -271,6 +270,7 @@ function processMoves() {
 
     ballState.active = worldState.ballState.active
     message.ballState = ballState
+    message.status = worldState.status
 
     if (!_.isEmpty(message)) {
         io.emit('gameState', message)
