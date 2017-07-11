@@ -8,8 +8,50 @@ var port = process.env.PORT || 8000
 server.listen(port);
 console.log("Listening on port " + port)
 
+// Simple ring-like data structure to hold spawn points
+var createRingBuffer = function(length) {
+    var pointer = 0, buffer = []
+
+    return {
+        push: function(item) {
+            buffer[pointer] = item
+            pointer = (length + pointer + 1) % length
+        }
+      , get: function() {
+            var tmpPointer = pointer
+            pointer = (length + pointer + 1) % length
+            return buffer[tmpPointer]
+        }
+    }
+}
+
+// setup the player spawn positionss (y coordinate only)
+var spawnPoints = createRingBuffer(2)
+spawnPoints.push(40)
+spawnPoints.push(600)
+
+
+// Use the variables to denote player state
+var DISCONNECTED = 0
+var CONNECTED = 1
+var READY = 2
+var LEVEL_LOADED = 3
+
+// Incoming changes are batched up and aplied to the worldState at the beginning of each tick.
+// These changes include player moves, connections and disconnections.
+var pendingChanges = {
+    playersState: {},
+    ballState: []
+}
+
+// game state
+var WAITING_FOR_CONNECTIONS = 0
+var WAITING_FOR_PLAYER_INIT = 1
+var IN_PROGRESS = 2
+
+// current state of the world
 var worldState = {
-    status: 'waiting',
+    status: WAITING_FOR_CONNECTIONS,
     playersState: {},
     ballState: {
         active: false
@@ -17,7 +59,6 @@ var worldState = {
     player1Score: 0,
     player2Score: 0
 }
-
 
 // Handle socket connection
 io.on('connection', function(client) {
@@ -27,69 +68,37 @@ io.on('connection', function(client) {
         io.to(client.id).emit('disconnect', {message: 'Too many users!'})
     }
 
-    // TODO: handle case if one player leaves mid game.
     client.on('disconnect', function() {
-        console.log("Disconnected client: " + client.id)
+        pendingChanges.playersState[client.id].state.push(DISCONNECTED)
     })
 
     console.log("Connected client " + client.id)
     console.log((numberOfClients || "no") + " connections");
 
     worldState.playersState[client.id] = {
-        state: 'connected',
-        posx: 320,
+        state: CONNECTED
+    }
+
+    pendingChanges.playersState[client.id] = {
         moves: []
+      , state: [CONNECTED]
     }
 
     client.on('playerReady', function() {
-        worldState.playersState[client.id].state = 'ready'
-
-        if (allPlayersAreReady()) {
-            worldState.status = 'startgame'
-        }
-    });
+        pendingChanges.playersState[client.id].state.push(READY)
+    })
 
     client.on('levelLoaded', function() {
-        worldState.playersState[client.id].state = 'levelLoaded'
-
-        if (allPlayersLevelLoaded()) {
-            io.emit('spawnPlayers', [
-                {
-                    id: _.keys(worldState.playersState)[0],
-                    pos: {
-                        x: 320,
-                        y: 40
-                    }
-                },
-                {
-                    id: _.keys(worldState.playersState)[1],
-                    pos: {
-                        x: 320,
-                        y: 600
-                    }
-                }
-            ]);
-
-            setTimeout(function() {
-                resetBall();
-            }, 3000);
-        }
+        pendingChanges.playersState[client.id].state.push(LEVEL_LOADED)
     });
 
     client.on('clientMove', function(data) {
-        worldState.playersState[client.id].moves.push({
+        // queue up the player moves
+        pendingChanges.playersState[client.id].moves.push({
             dir: data.dir,
             ts: data.ts
         });
     });
-
-    // TODO: set the client to waiting state if connected clients < 2
-    client.on('disconnect', function() {
-        delete worldState.playersState[client.id]
-        worldState.status = 'waiting'
-        console.log((Object.keys(io.sockets.connected).length || "no") + " connections");
-    });
-
 });
 
 function allPlayersHaveState(state) {
@@ -98,47 +107,118 @@ function allPlayersHaveState(state) {
     }, true)
 }
 
+function allPlayersHaveAtLeastState(state) {
+    return _.reduce(worldState.playersState, function(memo, playerState) {
+        return memo && playerState.state >= state
+    }, true)
+}
+
 function allPlayersAreReady() {
-    return allPlayersHaveState('ready') && _.size(worldState.playersState) === 2
+    return allPlayersHaveAtLeastState(READY) && _.size(worldState.playersState) === 2
 }
 
 function allPlayersLevelLoaded() {
-    return allPlayersHaveState('levelLoaded') && _.size(worldState.playersState) === 2
+    return allPlayersHaveState(LEVEL_LOADED) && _.size(worldState.playersState) === 2
 }
 
 function resetBall() {
-    worldState.ballState.posx = _.random(11, 629);
-    worldState.ballState.posy = 320;
+    var state = {}
+    state.posx = _.random(11, 629);
+    state.posy = 320;
 
     var directions = [-1, 1];
 
     var xdirIndex = _.random(0, 1);
-    worldState.ballState.xdir = directions[xdirIndex];
+    state.xdir = directions[xdirIndex];
 
     var ydirIndex = _.random(0, 1);
-    worldState.ballState.ydir = directions[ydirIndex];
+    state.ydir = directions[ydirIndex];
 
-    worldState.ballState.active = true;
+    state.active = true;
+
+    pendingChanges.ballState.push(state)
 }
 
 setInterval(function() {
-    processMoves();
+    processTick();
 }, 1000.0 / 60);
 
-function processMoves() {
+function processTick() {
+    // de-queue the pending player state changes (disconnections, etc)
+    var clientIds = _.keys(pendingChanges.playersState)
+    _.each(clientIds, function(clientId) {
+        var stateChanges = pendingChanges.playersState[clientId].state
+
+        while(stateChanges.length > 0) {
+            var state = stateChanges.shift()
+
+            // Disconnected
+            if (state === DISCONNECTED) {
+                delete worldState.playersState[clientId]
+                delete pendingChanges.playersState[clientId]
+                worldState.status = WAITING_FOR_CONNECTIONS
+                return
+            }
+
+            // Player ready
+            if (state === READY) {
+                // do nothing
+            }
+
+            // Level loaded
+            if (state === LEVEL_LOADED) {
+                worldState.playersState[clientId].posx = 320
+                worldState.playersState[clientId].posy = spawnPoints.get()
+            }
+
+            worldState.playersState[clientId].state = state
+        }
+    })
+
+    // TODO: handle case where player is disconnected
+    switch (worldState.status) {
+        case WAITING_FOR_CONNECTIONS: {
+            if (allPlayersAreReady()) {
+                worldState.status = WAITING_FOR_PLAYER_INIT
+            }
+            break
+        }
+        case WAITING_FOR_PLAYER_INIT: {
+            if (allPlayersLevelLoaded()) {
+                worldState.status = IN_PROGRESS
+                setTimeout(function() {
+                    resetBall();
+                }, 3000);
+            }
+            break
+        }
+    }
+
+    var message = {}
+    message.status = worldState.status
+
+    // If the game is not IN_PROGRESS, we can send the message now and skip all the physics processing
+    if (worldState.status != IN_PROGRESS) {
+        io.emit('gameState', message)
+        // console.log(JSON.stringify(worldState))
+        return
+    }
+
+    message.playersState = worldState.playersState
+
     // elapsed time
     var now = Date.now();
     var delta = now - prevTs;
     prevTs = now;
 
-    var message = {}
-
     // paddle moves
     _.each(worldState.playersState, function(playerState, clientId) {
         var oldposx = playerState.posx;
+        var pendingMoves = pendingChanges.playersState[clientId].moves
 
-        while(playerState.moves.length > 0) {
-            var move = playerState.moves.shift();
+        // de-queue all the accumulated player moves
+        while(pendingMoves.length > 0) {
+            var move = pendingMoves.shift();
             playerState.posx = Math.round(playerState.posx + move.dir * 0.6 * delta);
 
             // Handle left/right wall collisions:
@@ -162,10 +242,16 @@ function processMoves() {
                 posx: playerState.posx
             })
         }
-    });
+    })
 
     // ball move
     var ballState = {}
+
+    // Is there any pending setup for the ball?
+    while(pendingChanges.ballState.length > 0) {
+        worldState.ballState = pendingChanges.ballState.shift()
+    }
+
     if (worldState.ballState.active === true) {
         // calculate new position of ball, given that x/y speeds are each 400px/s
         worldState.ballState.posx = worldState.ballState.posx + worldState.ballState.xdir * 0.4 * delta;
@@ -270,10 +356,9 @@ function processMoves() {
 
     ballState.active = worldState.ballState.active
     message.ballState = ballState
-    message.status = worldState.status
 
     if (!_.isEmpty(message)) {
         io.emit('gameState', message)
-        console.log(JSON.stringify(message))
+        // console.log(JSON.stringify(worldState))
     }
 }
