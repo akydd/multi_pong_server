@@ -66,9 +66,31 @@ var createGameObject = function(posx, posy, width, height) {
     }
 }
 
-checkCollision = function(obja, objb) {
-    var a = obja.getBounds()
-    var b = objb.getBounds()
+var checkCollision= function(movableObj, immovableObj) {
+    var movable = movableObj.getBounds()
+    var immovable = immovableObj.getBounds()
+
+    if (movable.right <= immovable.left) {
+        return
+    }
+
+    if (movable.left >= immovable.right) {
+        return
+    }
+
+    if (movable.bottom <= immovable.top) {
+        return
+    }
+
+    if (movable.top >= immovable.bottom) {
+        return
+    }
+
+    // objects have collided!
+    // TODO: handle the x-axis
+    // TODO: handle the y-axis
+    
+
 }
 
 // Need to keep game object dimensions, locations, and velocity for physics
