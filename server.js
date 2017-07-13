@@ -25,6 +25,52 @@ var createRingBuffer = function(length) {
     }
 }
 
+// Simple rectangle with dimensions and velocity
+var createGameObject = function(posx, posy, width, height) {
+    var x = posx
+    var y = posy
+    var w = width
+    var h = height
+    var vx = 0
+    var vy = 0
+
+    var left = x - w/2
+    var right = x + w/2
+    var top = y - h/2
+    var bottom = y + h/2
+
+    return {
+        update: function(delta) {
+            x = x + vx * delta
+            y = y + vy * delta
+            this.updateBounds()
+        }
+      , updateBounds: function() {
+            left = x - w/2
+            right = x + w/2
+            top = y - h/2
+            bottom = y + h/2
+        }
+      , setVelocity: function(x, y) {
+            vx = x
+            vy = y
+        }
+      , getBounds: function() {
+            return {
+                left: left
+              , right: right
+              , top: top
+              , bottom: bottom
+            }
+        }
+    }
+}
+
+checkCollision = function(obja, objb) {
+    var a = obja.getBounds()
+    var b = objb.getBounds()
+}
+
 // Need to keep game object dimensions, locations, and velocity for physics
 var PADDLE_WIDTH = 100
 var PADDLE_HEIGHT = 20
