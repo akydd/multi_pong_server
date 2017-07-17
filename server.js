@@ -25,67 +25,10 @@ var createRingBuffer = function(length) {
     }
 }
 
-// Simple rectangle with dimensions and velocity
-var createGameObject = function(posx, posy, width, height) {
-    var x = posx
-    var y = posy
-
-    var prev_x = x
-    var prev_y = y
-
-    var w = width
-    var h = height
-
-    var vx = 0
-    var vy = 0
-
-    var left = x - w/2
-    var right = x + w/2
-    var top = y - h/2
-    var bottom = y + h/2
-
-    return {
-        update: function(delta) {
-            prev_x = x
-            prev_y = y
-            x = x + vx * delta
-            y = y + vy * delta
-            this.updateBounds()
-        }
-      , updateBounds: function() {
-            left = x - w/2
-            right = x + w/2
-            top = y - h/2
-            bottom = y + h/2
-        }
-      , setVelocity: function(x, y) {
-            vx = x
-            vy = y
-        }
-      , getBounds: function() {
-            return {
-                left: left
-              , right: right
-              , top: top
-              , bottom: bottom
-            }
-        }
-      , dx: function() {
-          return x - prev_x
-        }
-      , dy: function() {
-          return y - prev_y
-        }
-    }
-}
-
 /*
  * Check for and handle collisions between a ball and a paddle
  */
-var checkCollision = function(ball, paddle) {
-    var b = ball.getBounds()
-    var p = paddle.getBounds()
-
+var checkCollision = function(b, p) {
     if (b.right <= p.left) {
         return
     }
@@ -104,17 +47,17 @@ var checkCollision = function(ball, paddle) {
 
     // objects have collided!
     // Handle x axis
-    var maxXoverlap = Math.abs(ball.dx()) + Math.abs(paddle.dx())
+    var maxXoverlap = Math.abs(b.dx()) + Math.abs(p.dx())
     var xOverlap = 0
 
-    if (ball.dx() > paddle.dx()) {
+    if (b.dx() > p.dx()) {
         // ball is moving to the right, paddle is moving left or to the right, slower than the ball
         xOverlap = b.right - p.left
         if (xOverlap > maxXoverlap) {
             // overlap is too big to be a collision here.  Look elsewhere.
             xOverlap = 0
         }
-    } else if (ball.dx() < paddle.dx()) {
+    } else if (b.dx() < p.dx()) {
         // ball is moving to the left, paddle is moving right or to the left, slower than the ball
         xOverlap = b.left - p.right
         if (-xOverlap > maxXoverlap) {
@@ -125,23 +68,23 @@ var checkCollision = function(ball, paddle) {
 
     if (xOverlap !== 0) {
         // move the ball out of the xOverlap
-        ball.x = ball.x - xOverlap
+        b.x = b.x - xOverlap
         // reverse x direction of the ball.  The paddle has infinite mass and is unaffected.
-        ball.xv = -ball.xv
+        b.xv = -b.xv
     }
 
     // Handle y axis.  Easier since paddle has no y axis movement
-    var maxYoverlap = Math.abs(ball.dy())
+    var maxYoverlap = Math.abs(b.dy())
     var yOverlap = 0
 
-    if (ball.dy() < 0) {
+    if (b.dy() < 0) {
         // ball is moving down
         yOverlap = b.bottom - p.top
         if (yOverlap > maxYoverlap) {
             // overlap is too big to be a collision here.  Look elsewhere.
             yOverlap = 0
         }
-    } else if (ball.dy() < 0) {
+    } else if (b.dy() < 0) {
         // ball is moving up
         yOverlap = b.top - p.bottom
         if (-yOverlap > maxYoverlap) {
@@ -152,9 +95,9 @@ var checkCollision = function(ball, paddle) {
 
     if (yOverlap !== 0) {
         // move the ball out of the yOverlap
-        ball.y = ball.y - yOverlap
+        b.y = b.y - yOverlap
         // reverse x direction of the ball.  The paddle has infinite mass and is unaffected.
-        ball.yv = -ball.yv
+        b.yv = -b.yv
     }
 }
 
