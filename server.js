@@ -2,7 +2,8 @@ var app = require('express')()
   , server = require('http').Server(app)
   , io = require('socket.io')(server)
   , _ = require('underscore')
-  , prevTs = 0;
+  , prevTs = 0
+  , Entity = require('./entity.js')
 
 var port = process.env.PORT || 8000
 server.listen(port);
@@ -68,7 +69,7 @@ var checkCollision = function(b, p) {
 
     if (xOverlap !== 0) {
         // move the ball out of the xOverlap
-        b.x = b.x - xOverlap
+        b.setX(b.x - xOverlap)
         // reverse x direction of the ball.  The paddle has infinite mass and is unaffected.
         b.xv = -b.xv
     }
@@ -108,14 +109,12 @@ var BALL_WIDTH = 20
 var BALL_HEIGHT = 20
 var GAME_WIDTH = 640
 var GAME_HEIGHT = 640
-var PLAYER_OFFSET_Y = 40    // absolute distance from the center of the paddle to the top/bottom of the game world
-var PLAYER1_POS_Y = 0 + PLAYER_OFFSET_Y
-var PLAYER2_POS_Y = GAME_HEIGHT - PLAYER_OFFSET_Y
+var PLAYER_OFFSET = 40
 
 // setup the player spawn positionss (y coordinate only)
 var spawnPoints = createRingBuffer(2)
-spawnPoints.push(40)
-spawnPoints.push(600)
+spawnPoints.push(0 + PLAYER_OFFSET)
+spawnPoints.push(GAME_HEIGHT - PLAYER_OFFSET)
 
 
 // Use the variables to denote player state
@@ -210,16 +209,11 @@ function allPlayersLevelLoaded() {
 
 function resetBall() {
     var state = {}
-    state.posx = _.random(0 + BALL_WIDTH/2 + 1, GAME_WIDTH - BALL_WIDTH/2 - 1);
-    state.posy = GAME_HEIGHT/2;
+    state.x = _.random(0 + BALL_WIDTH/2 + 1, GAME_WIDTH - BALL_WIDTH/2 - 1);
+    state.y = GAME_HEIGHT/2;
 
-    var directions = [-1, 1];
-
-    var xdirIndex = _.random(0, 1);
-    state.xdir = directions[xdirIndex];
-
-    var ydirIndex = _.random(0, 1);
-    state.ydir = directions[ydirIndex];
+    state.vx = Math.random() >= 0.5 ? -0.4 : 0.4
+    state.vy = Math.random() >= 0.5 ? -0.4 : 0.4
 
     state.active = true;
 
@@ -254,8 +248,8 @@ function processTick() {
 
             // Level loaded
             if (state === LEVEL_LOADED) {
-                worldState.playersState[clientId].posx = GAME_WIDTH/2
-                worldState.playersState[clientId].posy = spawnPoints.get()
+                worldState.playsersState[clientId].entity = new Entity(GAME_WIDTH/2, spawnPoints.get(), PADDLE_WIDTH, PADDLE_HEIGHT)
+                worldState.ball.entity = new Entity(0, 0, BALL_WIDTH, BALL_HEIGHT)
             }
 
             worldState.playersState[clientId].state = state
@@ -300,59 +294,65 @@ function processTick() {
 
     // paddle moves
     _.each(worldState.playersState, function(playerState, clientId) {
-        var oldposx = playerState.posx;
+        var entity = playerState.entity
+        var oldposx = entity.x
         var pendingMoves = pendingChanges.playersState[clientId].moves
 
         // de-queue all the accumulated player moves
         while(pendingMoves.length > 0) {
             var move = pendingMoves.shift();
-            playerState.posx = Math.round(playerState.posx + move.dir * 0.6 * delta);
+            entity.vx = move.dir * 0.6
+            entity.update(delta)
+            // playerState.posx = Math.round(playerState.posx + move.dir * 0.6 * delta);
 
             // Handle left/right wall collisions:
-            // The paddles are 100px wide, anchored at 50px, and the game world is 640px wide.
-            // This means that a paddle's xpos cannot be < 50 or > 590.
-            if (playerState.posx > GAME_WIDTH - PADDLE_WIDTH/2) {
-                playerState.posx = GAME_WIDTH - PADDLE_WIDTH/2;
+            if (entity.right > GAME_WIDTH) {
+                entity.setX(GAME_WIDTH - entity.w/2)
             }
 
-            if (playerState.posx < 0 + PADDLE_WIDTH/2) {
-                playerState.posx = 0 + PADDLE_WIDTH/2;
+            if (entity.left < 0) {
+                entity.setX(entity.w/2)
             }
         }
 
         // Only send an adjustment if the posx has changed
-        if (oldposx !== playerState.posx) {
+        if (oldposx !== entity.x) {
             message.clientAdjust = message.clientAdjust || []
             message.clientAdjust.push({
                 id: clientId,
                 ts: Date.now(),
-                posx: playerState.posx
+                posx: entity.x
             })
         }
     })
 
     // ball move
     var ballState = {}
+    var ball = worldState.ball.entity
 
     // Is there any pending setup for the ball?
     while(pendingChanges.ballState.length > 0) {
-        worldState.ballState = pendingChanges.ballState.shift()
+        var pending = pendingChanges.ballState.shift()
+        ball.setX(pending.x)
+        ball.setY(pending.y)
+        ball.vx = pending.vx
+        ball.vy = pending.vy
     }
 
     if (worldState.ballState.active === true) {
-        // calculate new position of ball, given that x/y speeds are each 400px/s
-        worldState.ballState.posx = worldState.ballState.posx + worldState.ballState.xdir * 0.4 * delta;
-        worldState.ballState.posy = worldState.ballState.posy + worldState.ballState.ydir * 0.4 * delta;
+        ball.update(delta)
+        // worldState.ballState.posx = worldState.ballState.posx + worldState.ballState.xdir * 0.4 * delta;
+        // worldState.ballState.posy = worldState.ballState.posy + worldState.ballState.ydir * 0.4 * delta;
 
         // Handle ball out of bounds in y direction.
         // Someone scored a point!  Register and reset ball.
-        if (worldState.ballState.posy < 0 - BALL_HEIGHT/2 || worldState.ballState.posy > GAME_HEIGHT + BALL_HEIGHT/2) {
+        if (ball.top < 0 || ball.bottom > GAME_HEIGHT) {
             // the Phaser clients should handle killing the ball once it's out of bounds.
             worldState.ballState.active = false
 
             var updateScore 
 
-            if (worldState.ballState.posy < 0 - BALL_HEIGHT/2) {
+            if (ball.top < 0) {
                 worldState.player2Score += 1
                 updateScore = {
                     player: 'player2',
@@ -360,7 +360,7 @@ function processTick() {
                 }
             }
 
-            if (worldState.ballState.posy > GAME_HEIGHT + BALL_HEIGHT/2) {
+            if (ball.bottom > GAME_HEIGHT) {
                 worldState.player1Score += 1
                 updateScore = {
                     player: 'player1',
@@ -376,69 +376,70 @@ function processTick() {
         }
 
         // Handle left/right wall collisions.
-        // The ball is is a 20x20 square, so it will hit a wall when xpos = 10
-        // or when xpos = 630.  In either case, switch x direction.
-        if (worldState.ballState.posx <= 0 + BALL_WIDTH/2) {
-            worldState.ballState.posx = 0 + BALL_WIDTH/2;
-            worldState.ballState.xdir = 1
+        if (ball.left <= 0) {
+            ball.setX(ball.w/2)
+            ball.vx = -ball.vx
         }
 
-        if (worldState.ballState.posx >= GAME_WIDTH - BALL_WIDTH/2) {
-            worldState.ballState.posx = GAME_WIDTH - BALL_WIDTH/2;
-            worldState.ballState.xdir = -1
+        if (ball.right >= GAME_WIDTH) {
+            ball.setX(GAME_WIDTH - ball.w/2)
+            ball.vx = -ball.vx
         }
 
         // Handle ball & paddle collisions.
         // Note that the max x overlap that can occur is exactly delta, since the paddle moves at 0.6x/delta and the ball moves at 0.4x/delta and 0.4y/delta.
         // The max y overlap that can occur is 0.4 * delta.
 
-        var player1 = worldState.playersState[_.keys(worldState.playersState)[0]]
-        var player2 = worldState.playersState[_.keys(worldState.playersState)[1]]
+        var player1 = worldState.playersState[_.keys(worldState.playersState)[0]].entity
+        var player2 = worldState.playersState[_.keys(worldState.playersState)[1]].entity
 
-        // Collision of ball to front of top paddle
-        if (worldState.ballState.posy <= 0 + PLAYER1_POS_Y + PADDLE_HEIGHT/2  && worldState.ballState.posy >= 50 - 0.4 * delta && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx + 50 + 10) {
-            // push the ball up to the surface of the paddle
-            worldState.ballState.posy = 50
-            worldState.ballState.ydir = 1
-        }
+        checkCollision(ball, player1)
+        checkCollision(ball, player2)
 
-        // Collision of ball to left side of top paddle
-        if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx - 50 - 10 + delta) {
-            // push the ball to the left surface of the paddle
-            worldState.ballState.posx = player1.posx - 50 - 10
-            worldState.ballState.xdir = -1
-        }
+        //// Collision of ball to front of top paddle
+        //if (worldState.ballState.posy <= 0 + PLAYER1_POS_Y + PADDLE_HEIGHT/2  && worldState.ballState.posy >= 50 - 0.4 * delta && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx + 50 + 10) {
+        //    // push the ball up to the surface of the paddle
+        //    worldState.ballState.posy = 50
+        //    worldState.ballState.ydir = 1
+        //}
 
-        // Collision of ball to right side of top paddle
-        if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx <= player1.posx + 50 + 10 && worldState.ballState.posx >= player1.posx + 50 + 10 - delta) {
-            // push the ball to the left surface of the paddle
-            worldState.ballState.posx = player1.posx + 50 + 10
-            worldState.ballState.xdir = 1
-        }
+        //// Collision of ball to left side of top paddle
+        //if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx - 50 - 10 + delta) {
+        //    // push the ball to the left surface of the paddle
+        //    worldState.ballState.posx = player1.posx - 50 - 10
+        //    worldState.ballState.xdir = -1
+        //}
 
-        // Collision of ball to front of bottom paddle
-        if (worldState.ballState.posy >= 590  && worldState.ballState.posy <= 590 + 0.4 * delta && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx + 50 + 10) {
-            // push the ball up to the surface of the paddle
-            worldState.ballState.posy = 590
-            worldState.ballState.ydir = -1
-        }
+        //// Collision of ball to right side of top paddle
+        //if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx <= player1.posx + 50 + 10 && worldState.ballState.posx >= player1.posx + 50 + 10 - delta) {
+        //    // push the ball to the left surface of the paddle
+        //    worldState.ballState.posx = player1.posx + 50 + 10
+        //    worldState.ballState.xdir = 1
+        //}
 
-        // Collision of ball to left side of bottom paddle
-        if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx - 50 - 10 + delta) {
-            // push the ball to the left surface of the paddle
-            worldState.ballState.posx = player2.posx - 50 - 10
-            worldState.ballState.xdir = -1
-        }
+        //// Collision of ball to front of bottom paddle
+        //if (worldState.ballState.posy >= 590  && worldState.ballState.posy <= 590 + 0.4 * delta && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx + 50 + 10) {
+        //    // push the ball up to the surface of the paddle
+        //    worldState.ballState.posy = 590
+        //    worldState.ballState.ydir = -1
+        //}
 
-        // Collision of ball to right side of bottom paddle
-        if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx <= player2.posx + 50 + 10 && worldState.ballState.posx >= player2.posx + 50 + 10 - delta) {
-            // push the ball to the left surface of the paddle
-            worldState.ballState.posx = player2.posx + 50 + 10
-            worldState.ballState.xdir = 1
-        }
+        //// Collision of ball to left side of bottom paddle
+        //if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx - 50 - 10 + delta) {
+        //    // push the ball to the left surface of the paddle
+        //    worldState.ballState.posx = player2.posx - 50 - 10
+        //    worldState.ballState.xdir = -1
+        //}
 
-        ballState.posx = worldState.ballState.posx
-        ballState.posy = worldState.ballState.posy
+        //// Collision of ball to right side of bottom paddle
+        //if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx <= player2.posx + 50 + 10 && worldState.ballState.posx >= player2.posx + 50 + 10 - delta) {
+        //    // push the ball to the left surface of the paddle
+        //    worldState.ballState.posx = player2.posx + 50 + 10
+        //    worldState.ballState.xdir = 1
+        //}
+
+        ballState.posx = worldState.ballState.entity.x
+        ballState.posy = worldState.ballState.entity.y
     }
 
     ballState.active = worldState.ballState.active

@@ -37,6 +37,16 @@ Entity.prototype = {
   , dy: function() {
       return this.y - this.prev_y
     }
+  , setX: function(x) {
+      this.x = x
+      this.left = x - this.w/2
+      this.right = x + this.w/2
+    }
+  , setY: function(y) {
+      this.y = y
+      this.top = y - this.h/2
+      this.bottom = y + this.h/2
+    }
 }
 
 Entity.prototype.constructor = Entity;
