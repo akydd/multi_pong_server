@@ -248,8 +248,8 @@ function processTick() {
 
             // Level loaded
             if (state === LEVEL_LOADED) {
-                worldState.playsersState[clientId].entity = new Entity(GAME_WIDTH/2, spawnPoints.get(), PADDLE_WIDTH, PADDLE_HEIGHT)
-                worldState.ball.entity = new Entity(0, 0, BALL_WIDTH, BALL_HEIGHT)
+                worldState.playersState[clientId].entity = new Entity(GAME_WIDTH/2, spawnPoints.get(), PADDLE_WIDTH, PADDLE_HEIGHT)
+                worldState.ballState.entity = new Entity(0, 0, BALL_WIDTH, BALL_HEIGHT)
             }
 
             worldState.playersState[clientId].state = state
@@ -328,7 +328,7 @@ function processTick() {
 
     // ball move
     var ballState = {}
-    var ball = worldState.ball.entity
+    var ball = worldState.ballState.entity
 
     // Is there any pending setup for the ball?
     while(pendingChanges.ballState.length > 0) {

@@ -1,4 +1,8 @@
-Entity = function(x, y, w, h) {
+'use strict'
+
+module.exports = Entity
+
+function Entity(x, y, w, h) {
     this.x = x
     this.y = y
 
@@ -48,5 +52,3 @@ Entity.prototype = {
       this.bottom = y + this.h/2
     }
 }
-
-Entity.prototype.constructor = Entity;
