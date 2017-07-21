@@ -126,8 +126,8 @@ var LEVEL_LOADED = 3
 // Incoming changes are batched up and aplied to the worldState at the beginning of each tick.
 // These changes include player moves, connections and disconnections.
 var pendingChanges = {
-    playersState: {},
-    ballState: []
+    players: {},
+    ball: []
 }
 
 // game state
@@ -138,8 +138,8 @@ var IN_PROGRESS = 2
 // current state of the world
 var worldState = {
     status: WAITING_FOR_CONNECTIONS,
-    playersState: {},
-    ballState: {
+    players: {},
+    ball: {
         active: false
     },
     player1Score: 0,
@@ -155,32 +155,32 @@ io.on('connection', function(client) {
     }
 
     client.on('disconnect', function() {
-        pendingChanges.playersState[client.id].state.push(DISCONNECTED)
+        pendingChanges.players[client.id].state.push(DISCONNECTED)
     })
 
     console.log("Connected client " + client.id)
     console.log((numberOfClients || "no") + " connections");
 
-    worldState.playersState[client.id] = {
+    worldState.players[client.id] = {
         state: CONNECTED
     }
 
-    pendingChanges.playersState[client.id] = {
+    pendingChanges.players[client.id] = {
         moves: []
       , state: [CONNECTED]
     }
 
     client.on('playerReady', function() {
-        pendingChanges.playersState[client.id].state.push(READY)
+        pendingChanges.players[client.id].state.push(READY)
     })
 
     client.on('levelLoaded', function() {
-        pendingChanges.playersState[client.id].state.push(LEVEL_LOADED)
+        pendingChanges.players[client.id].state.push(LEVEL_LOADED)
     });
 
     client.on('clientMove', function(data) {
         // queue up the player moves
-        pendingChanges.playersState[client.id].moves.push({
+        pendingChanges.players[client.id].moves.push({
             dir: data.dir,
             ts: data.ts
         });
@@ -188,23 +188,23 @@ io.on('connection', function(client) {
 });
 
 function allPlayersHaveState(state) {
-    return _.reduce(worldState.playersState, function(memo, playerState) {
+    return _.reduce(worldState.players, function(memo, playerState) {
         return memo && playerState.state === state
     }, true)
 }
 
 function allPlayersHaveAtLeastState(state) {
-    return _.reduce(worldState.playersState, function(memo, playerState) {
+    return _.reduce(worldState.players, function(memo, playerState) {
         return memo && playerState.state >= state
     }, true)
 }
 
 function allPlayersAreReady() {
-    return allPlayersHaveAtLeastState(READY) && _.size(worldState.playersState) === 2
+    return allPlayersHaveAtLeastState(READY) && _.size(worldState.players) === 2
 }
 
 function allPlayersLevelLoaded() {
-    return allPlayersHaveState(LEVEL_LOADED) && _.size(worldState.playersState) === 2
+    return allPlayersHaveState(LEVEL_LOADED) && _.size(worldState.players) === 2
 }
 
 function resetBall() {
@@ -217,7 +217,7 @@ function resetBall() {
 
     state.active = true;
 
-    pendingChanges.ballState.push(state)
+    pendingChanges.ball.push(state)
 }
 
 setInterval(function() {
@@ -226,17 +226,17 @@ setInterval(function() {
 
 function processTick() {
     // de-queue the pending player state changes (disconnections, etc)
-    var clientIds = _.keys(pendingChanges.playersState)
+    var clientIds = _.keys(pendingChanges.players)
     _.each(clientIds, function(clientId) {
-        var stateChanges = pendingChanges.playersState[clientId].state
+        var stateChanges = pendingChanges.players[clientId].state
 
         while(stateChanges.length > 0) {
             var state = stateChanges.shift()
 
             // Disconnected
             if (state === DISCONNECTED) {
-                delete worldState.playersState[clientId]
-                delete pendingChanges.playersState[clientId]
+                delete worldState.players[clientId]
+                delete pendingChanges.players[clientId]
                 worldState.status = WAITING_FOR_CONNECTIONS
                 return
             }
@@ -248,11 +248,11 @@ function processTick() {
 
             // Level loaded
             if (state === LEVEL_LOADED) {
-                worldState.playersState[clientId].entity = new Entity(GAME_WIDTH/2, spawnPoints.get(), PADDLE_WIDTH, PADDLE_HEIGHT)
-                worldState.ballState.entity = new Entity(0, 0, BALL_WIDTH, BALL_HEIGHT)
+                worldState.players[clientId].entity = new Entity(GAME_WIDTH/2, spawnPoints.get(), PADDLE_WIDTH, PADDLE_HEIGHT)
+                worldState.ball.entity = new Entity(0, 0, BALL_WIDTH, BALL_HEIGHT)
             }
 
-            worldState.playersState[clientId].state = state
+            worldState.players[clientId].state = state
         }
     })
 
@@ -285,18 +285,16 @@ function processTick() {
         return
     }
 
-    message.playersState = worldState.playersState
-
     // elapsed time
     var now = Date.now();
     var delta = now - prevTs;
     prevTs = now;
 
     // paddle moves
-    _.each(worldState.playersState, function(playerState, clientId) {
+    _.each(worldState.players, function(playerState, clientId) {
         var entity = playerState.entity
         var oldposx = entity.x
-        var pendingMoves = pendingChanges.playersState[clientId].moves
+        var pendingMoves = pendingChanges.players[clientId].moves
 
         // de-queue all the accumulated player moves
         while(pendingMoves.length > 0) {
@@ -326,29 +324,31 @@ function processTick() {
         }
     })
 
+    // TODO: add player position data to outgoing message
+    message.players = {}
+
     // ball move
-    var ballState = {}
-    var ball = worldState.ballState.entity
+    var ball = worldState.ball.entity
 
     // Is there any pending setup for the ball?
-    while(pendingChanges.ballState.length > 0) {
-        var pending = pendingChanges.ballState.shift()
+    while(pendingChanges.ball.length > 0) {
+        var pending = pendingChanges.ball.shift()
         ball.setX(pending.x)
         ball.setY(pending.y)
         ball.vx = pending.vx
         ball.vy = pending.vy
     }
 
-    if (worldState.ballState.active === true) {
+    if (worldState.ball.active === true) {
         ball.update(delta)
-        // worldState.ballState.posx = worldState.ballState.posx + worldState.ballState.xdir * 0.4 * delta;
-        // worldState.ballState.posy = worldState.ballState.posy + worldState.ballState.ydir * 0.4 * delta;
+        // worldState.ball.posx = worldState.ball.posx + worldState.ball.xdir * 0.4 * delta;
+        // worldState.ball.posy = worldState.ball.posy + worldState.ball.ydir * 0.4 * delta;
 
         // Handle ball out of bounds in y direction.
         // Someone scored a point!  Register and reset ball.
         if (ball.top < 0 || ball.bottom > GAME_HEIGHT) {
             // the Phaser clients should handle killing the ball once it's out of bounds.
-            worldState.ballState.active = false
+            worldState.ball.active = false
 
             var updateScore 
 
@@ -390,63 +390,63 @@ function processTick() {
         // Note that the max x overlap that can occur is exactly delta, since the paddle moves at 0.6x/delta and the ball moves at 0.4x/delta and 0.4y/delta.
         // The max y overlap that can occur is 0.4 * delta.
 
-        var player1 = worldState.playersState[_.keys(worldState.playersState)[0]].entity
-        var player2 = worldState.playersState[_.keys(worldState.playersState)[1]].entity
+        var player1 = worldState.players[_.keys(worldState.players)[0]].entity
+        var player2 = worldState.players[_.keys(worldState.players)[1]].entity
 
         checkCollision(ball, player1)
         checkCollision(ball, player2)
 
         //// Collision of ball to front of top paddle
-        //if (worldState.ballState.posy <= 0 + PLAYER1_POS_Y + PADDLE_HEIGHT/2  && worldState.ballState.posy >= 50 - 0.4 * delta && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx + 50 + 10) {
+        //if (worldState.ball.posy <= 0 + PLAYER1_POS_Y + PADDLE_HEIGHT/2  && worldState.ball.posy >= 50 - 0.4 * delta && worldState.ball.posx >= player1.posx - 50 - 10 && worldState.ball.posx <= player1.posx + 50 + 10) {
         //    // push the ball up to the surface of the paddle
-        //    worldState.ballState.posy = 50
-        //    worldState.ballState.ydir = 1
+        //    worldState.ball.posy = 50
+        //    worldState.ball.ydir = 1
         //}
 
         //// Collision of ball to left side of top paddle
-        //if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx >= player1.posx - 50 - 10 && worldState.ballState.posx <= player1.posx - 50 - 10 + delta) {
+        //if (worldState.ball.posy <= 50 && worldState.ball.posy >= 10 && worldState.ball.posx >= player1.posx - 50 - 10 && worldState.ball.posx <= player1.posx - 50 - 10 + delta) {
         //    // push the ball to the left surface of the paddle
-        //    worldState.ballState.posx = player1.posx - 50 - 10
-        //    worldState.ballState.xdir = -1
+        //    worldState.ball.posx = player1.posx - 50 - 10
+        //    worldState.ball.xdir = -1
         //}
 
         //// Collision of ball to right side of top paddle
-        //if (worldState.ballState.posy <= 50 && worldState.ballState.posy >= 10 && worldState.ballState.posx <= player1.posx + 50 + 10 && worldState.ballState.posx >= player1.posx + 50 + 10 - delta) {
+        //if (worldState.ball.posy <= 50 && worldState.ball.posy >= 10 && worldState.ball.posx <= player1.posx + 50 + 10 && worldState.ball.posx >= player1.posx + 50 + 10 - delta) {
         //    // push the ball to the left surface of the paddle
-        //    worldState.ballState.posx = player1.posx + 50 + 10
-        //    worldState.ballState.xdir = 1
+        //    worldState.ball.posx = player1.posx + 50 + 10
+        //    worldState.ball.xdir = 1
         //}
 
         //// Collision of ball to front of bottom paddle
-        //if (worldState.ballState.posy >= 590  && worldState.ballState.posy <= 590 + 0.4 * delta && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx + 50 + 10) {
+        //if (worldState.ball.posy >= 590  && worldState.ball.posy <= 590 + 0.4 * delta && worldState.ball.posx >= player2.posx - 50 - 10 && worldState.ball.posx <= player2.posx + 50 + 10) {
         //    // push the ball up to the surface of the paddle
-        //    worldState.ballState.posy = 590
-        //    worldState.ballState.ydir = -1
+        //    worldState.ball.posy = 590
+        //    worldState.ball.ydir = -1
         //}
 
         //// Collision of ball to left side of bottom paddle
-        //if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx >= player2.posx - 50 - 10 && worldState.ballState.posx <= player2.posx - 50 - 10 + delta) {
+        //if (worldState.ball.posy <= 630 && worldState.ball.posy >= 590 && worldState.ball.posx >= player2.posx - 50 - 10 && worldState.ball.posx <= player2.posx - 50 - 10 + delta) {
         //    // push the ball to the left surface of the paddle
-        //    worldState.ballState.posx = player2.posx - 50 - 10
-        //    worldState.ballState.xdir = -1
+        //    worldState.ball.posx = player2.posx - 50 - 10
+        //    worldState.ball.xdir = -1
         //}
 
         //// Collision of ball to right side of bottom paddle
-        //if (worldState.ballState.posy <= 630 && worldState.ballState.posy >= 590 && worldState.ballState.posx <= player2.posx + 50 + 10 && worldState.ballState.posx >= player2.posx + 50 + 10 - delta) {
+        //if (worldState.ball.posy <= 630 && worldState.ball.posy >= 590 && worldState.ball.posx <= player2.posx + 50 + 10 && worldState.ball.posx >= player2.posx + 50 + 10 - delta) {
         //    // push the ball to the left surface of the paddle
-        //    worldState.ballState.posx = player2.posx + 50 + 10
-        //    worldState.ballState.xdir = 1
+        //    worldState.ball.posx = player2.posx + 50 + 10
+        //    worldState.ball.xdir = 1
         //}
 
-        ballState.posx = worldState.ballState.entity.x
-        ballState.posy = worldState.ballState.entity.y
+        ball.posx = worldState.ball.entity.x
+        ball.posy = worldState.ball.entity.y
     }
 
-    ballState.active = worldState.ballState.active
-    message.ballState = ballState
+    ball.active = worldState.ball.active
+    message.ball = ball
 
     if (!_.isEmpty(message)) {
         io.emit('gameState', message)
-        // console.log(JSON.stringify(worldState))
+        console.log(JSON.stringify(worldState))
     }
 }
