@@ -212,6 +212,7 @@ function resetBall() {
     state.x = _.random(0 + BALL_WIDTH/2 + 1, GAME_WIDTH - BALL_WIDTH/2 - 1);
     state.y = GAME_HEIGHT/2;
 
+    // Randomize ball direction
     state.vx = Math.random() >= 0.5 ? -0.4 : 0.4
     state.vy = Math.random() >= 0.5 ? -0.4 : 0.4
 
@@ -291,9 +292,10 @@ function processTick() {
     prevTs = now;
 
     // paddle moves
+    message.players = {}
     _.each(worldState.players, function(playerState, clientId) {
         var entity = playerState.entity
-        var oldposx = entity.x
+        var oldx = entity.x
         var pendingMoves = pendingChanges.players[clientId].moves
 
         // de-queue all the accumulated player moves
@@ -301,7 +303,6 @@ function processTick() {
             var move = pendingMoves.shift();
             entity.vx = move.dir * 0.6
             entity.update(delta)
-            // playerState.posx = Math.round(playerState.posx + move.dir * 0.6 * delta);
 
             // Handle left/right wall collisions:
             if (entity.right > GAME_WIDTH) {
@@ -313,19 +314,24 @@ function processTick() {
             }
         }
 
-        // Only send an adjustment if the posx has changed
-        if (oldposx !== entity.x) {
+        // Only send an adjustment if the x coordinate has changed
+        if (oldx !== entity.x) {
             message.clientAdjust = message.clientAdjust || []
             message.clientAdjust.push({
                 id: clientId,
                 ts: Date.now(),
-                posx: entity.x
+                x: entity.x
             })
         }
+        
+        // Add player telemetry to outgoing message
+        message.players[clientId] = {
+            x: entity.x
+          , y: entity.y
+        }
+
     })
 
-    // TODO: add player position data to outgoing message
-    message.players = {}
 
     // ball move
     var ball = worldState.ball.entity
@@ -339,10 +345,9 @@ function processTick() {
         ball.vy = pending.vy
     }
 
+    message.ball = {}
     if (worldState.ball.active === true) {
         ball.update(delta)
-        // worldState.ball.posx = worldState.ball.posx + worldState.ball.xdir * 0.4 * delta;
-        // worldState.ball.posy = worldState.ball.posy + worldState.ball.ydir * 0.4 * delta;
 
         // Handle ball out of bounds in y direction.
         // Someone scored a point!  Register and reset ball.
@@ -367,6 +372,7 @@ function processTick() {
                     score: worldState.player1Score
                 }
             }
+
             message.updateScore = updateScore
 
             // reset ball
@@ -386,64 +392,18 @@ function processTick() {
             ball.vx = -ball.vx
         }
 
-        // Handle ball & paddle collisions.
-        // Note that the max x overlap that can occur is exactly delta, since the paddle moves at 0.6x/delta and the ball moves at 0.4x/delta and 0.4y/delta.
-        // The max y overlap that can occur is 0.4 * delta.
-
         var player1 = worldState.players[_.keys(worldState.players)[0]].entity
         var player2 = worldState.players[_.keys(worldState.players)[1]].entity
 
         checkCollision(ball, player1)
         checkCollision(ball, player2)
 
-        //// Collision of ball to front of top paddle
-        //if (worldState.ball.posy <= 0 + PLAYER1_POS_Y + PADDLE_HEIGHT/2  && worldState.ball.posy >= 50 - 0.4 * delta && worldState.ball.posx >= player1.posx - 50 - 10 && worldState.ball.posx <= player1.posx + 50 + 10) {
-        //    // push the ball up to the surface of the paddle
-        //    worldState.ball.posy = 50
-        //    worldState.ball.ydir = 1
-        //}
-
-        //// Collision of ball to left side of top paddle
-        //if (worldState.ball.posy <= 50 && worldState.ball.posy >= 10 && worldState.ball.posx >= player1.posx - 50 - 10 && worldState.ball.posx <= player1.posx - 50 - 10 + delta) {
-        //    // push the ball to the left surface of the paddle
-        //    worldState.ball.posx = player1.posx - 50 - 10
-        //    worldState.ball.xdir = -1
-        //}
-
-        //// Collision of ball to right side of top paddle
-        //if (worldState.ball.posy <= 50 && worldState.ball.posy >= 10 && worldState.ball.posx <= player1.posx + 50 + 10 && worldState.ball.posx >= player1.posx + 50 + 10 - delta) {
-        //    // push the ball to the left surface of the paddle
-        //    worldState.ball.posx = player1.posx + 50 + 10
-        //    worldState.ball.xdir = 1
-        //}
-
-        //// Collision of ball to front of bottom paddle
-        //if (worldState.ball.posy >= 590  && worldState.ball.posy <= 590 + 0.4 * delta && worldState.ball.posx >= player2.posx - 50 - 10 && worldState.ball.posx <= player2.posx + 50 + 10) {
-        //    // push the ball up to the surface of the paddle
-        //    worldState.ball.posy = 590
-        //    worldState.ball.ydir = -1
-        //}
-
-        //// Collision of ball to left side of bottom paddle
-        //if (worldState.ball.posy <= 630 && worldState.ball.posy >= 590 && worldState.ball.posx >= player2.posx - 50 - 10 && worldState.ball.posx <= player2.posx - 50 - 10 + delta) {
-        //    // push the ball to the left surface of the paddle
-        //    worldState.ball.posx = player2.posx - 50 - 10
-        //    worldState.ball.xdir = -1
-        //}
-
-        //// Collision of ball to right side of bottom paddle
-        //if (worldState.ball.posy <= 630 && worldState.ball.posy >= 590 && worldState.ball.posx <= player2.posx + 50 + 10 && worldState.ball.posx >= player2.posx + 50 + 10 - delta) {
-        //    // push the ball to the left surface of the paddle
-        //    worldState.ball.posx = player2.posx + 50 + 10
-        //    worldState.ball.xdir = 1
-        //}
-
-        ball.posx = worldState.ball.entity.x
-        ball.posy = worldState.ball.entity.y
+        // Set ball telemetry to outgoing message
+        message.ball.x = worldState.ball.entity.x
+        message.ball.y = worldState.ball.entity.y
     }
 
-    ball.active = worldState.ball.active
-    message.ball = ball
+    message.ball.active = worldState.ball.active
 
     if (!_.isEmpty(message)) {
         io.emit('gameState', message)
