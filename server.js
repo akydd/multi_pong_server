@@ -71,7 +71,7 @@ var checkCollision = function(b, p) {
         // move the ball out of the xOverlap
         b.setX(b.x - xOverlap)
         // reverse x direction of the ball.  The paddle has infinite mass and is unaffected.
-        b.xv = -b.xv
+        b.vx = -b.vx
     }
 
     // Handle y axis.  Easier since paddle has no y axis movement
@@ -79,15 +79,15 @@ var checkCollision = function(b, p) {
     var yOverlap = 0
 
     if (b.dy() < 0) {
-        // ball is moving down
-        yOverlap = b.bottom - p.top
+        // ball is moving up
+        yOverlap = b.top - p.bottom
         if (yOverlap > maxYoverlap) {
             // overlap is too big to be a collision here.  Look elsewhere.
             yOverlap = 0
         }
-    } else if (b.dy() < 0) {
-        // ball is moving up
-        yOverlap = b.top - p.bottom
+    } else if (b.dy() > 0) {
+        // ball is moving down
+        yOverlap = b.bottom - p.top
         if (-yOverlap > maxYoverlap) {
             // overlap is too big to be a collision here.  Look elsewhere.
             yOverlap = 0
@@ -97,8 +97,8 @@ var checkCollision = function(b, p) {
     if (yOverlap !== 0) {
         // move the ball out of the yOverlap
         b.y = b.y - yOverlap
-        // reverse x direction of the ball.  The paddle has infinite mass and is unaffected.
-        b.yv = -b.yv
+        // reverse y direction of the ball.  The paddle has infinite mass and is unaffected.
+        b.vy = -b.vy
     }
 }
 
@@ -343,6 +343,7 @@ function processTick() {
         ball.setY(pending.y)
         ball.vx = pending.vx
         ball.vy = pending.vy
+        worldState.ball.active = pending.active
     }
 
     message.ball = {}
@@ -407,6 +408,6 @@ function processTick() {
 
     if (!_.isEmpty(message)) {
         io.emit('gameState', message)
-        console.log(JSON.stringify(worldState))
+        // console.log(JSON.stringify(message))
     }
 }
