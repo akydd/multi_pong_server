@@ -156,10 +156,12 @@ io.on('connection', function(client) {
 
     client.on('disconnect', function() {
         pendingChanges.players[client.id].state.push(DISCONNECTED)
+        console.log("Disconnected client " + client.id)
+        console.log((Object.keys(io.sockets.connected).length || "no") + " connections")
     })
 
     console.log("Connected client " + client.id)
-    console.log((numberOfClients || "no") + " connections");
+    console.log((numberOfClients || "no") + " connections")
 
     worldState.players[client.id] = {
         state: CONNECTED
@@ -236,9 +238,23 @@ function processTick() {
 
             // Disconnected
             if (state === DISCONNECTED) {
+                // remove disconnected player
                 delete worldState.players[clientId]
                 delete pendingChanges.players[clientId]
+
+                // Set remaining players to CONNECTED state
+                var remainingPlayers = _.keys(worldState.players)
+                _.each(remainingPlayers, function(player) {
+                    worldState.players[player].state = CONNECTED
+                })
+
+                // Put game back to waiting state
                 worldState.status = WAITING_FOR_CONNECTIONS
+
+                // Reset scores
+                worldState.player1Score = 0
+                worldState.player2Score = 0
+
                 return
             }
 
@@ -257,7 +273,6 @@ function processTick() {
         }
     })
 
-    // TODO: handle case where player is disconnected
     switch (worldState.status) {
         case WAITING_FOR_CONNECTIONS: {
             if (allPlayersAreReady()) {
