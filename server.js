@@ -336,14 +336,14 @@ function processTick() {
         // Only send an adjustment if the x coordinate has changed.
         // Use the ts of the last processed client message to notify
         // the client that it was the last message processed.
-        if (oldx !== entity.x) {
+        // if (oldx !== entity.x) {
             message.clientAdjust = message.clientAdjust || []
             message.clientAdjust.push({
                 id: clientId,
                 ts: ack,
                 x: entity.x
             })
-        }
+        //}
         
         // Add player telemetry to outgoing message
         message.players[clientId] = {
