@@ -96,7 +96,7 @@ var checkCollision = function(b, p) {
 
     if (yOverlap !== 0) {
         // move the ball out of the yOverlap
-        b.y = b.y - yOverlap
+        b.setY(b.y - yOverlap)
         // reverse y direction of the ball.  The paddle has infinite mass and is unaffected.
         b.vy = -b.vy
     }
@@ -223,6 +223,7 @@ function resetBall() {
     pendingChanges.ball.push(state)
 }
 
+// Run at 60 fps
 setInterval(function() {
     processTick();
 }, 1000.0 / 60);
@@ -314,8 +315,11 @@ function processTick() {
         var pendingMoves = pendingChanges.players[clientId].moves
 
         // de-queue all the accumulated player moves
+        var ack
         while(pendingMoves.length > 0) {
             var move = pendingMoves.shift();
+            var ack = move.ts
+            // Speed is 600 pixels / second, or 0.6 pixels / millisecond
             entity.vx = move.dir * 0.6
             entity.update(delta)
 
@@ -329,12 +333,14 @@ function processTick() {
             }
         }
 
-        // Only send an adjustment if the x coordinate has changed
+        // Only send an adjustment if the x coordinate has changed.
+        // Use the ts of the last processed client message to notify
+        // the client that it was the last message processed.
         if (oldx !== entity.x) {
             message.clientAdjust = message.clientAdjust || []
             message.clientAdjust.push({
                 id: clientId,
-                ts: Date.now(),
+                ts: ack,
                 x: entity.x
             })
         }
